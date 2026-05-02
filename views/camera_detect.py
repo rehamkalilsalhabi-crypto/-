@@ -5,10 +5,9 @@ from ultralytics import YOLO
 from PIL import Image
 import os
 
-# 1. دالة ذكية تبحث عن الموديل في المجلدات (سواء كانت MODELS أو models)
+# 1. Smart model loader
 @st.cache_resource
 def load_yolo_model():
-    # قائمة بالمسارات بناءً على ما ظهر في صورتك (MODELS بحروف كبيرة)
     search_paths = [
         'MODELS/best.pt',
         'models/best.pt',
@@ -20,63 +19,54 @@ def load_yolo_model():
     for path in search_paths:
         if os.path.exists(path):
             return YOLO(path)
-    
     return None
 
 model = load_yolo_model()
 
 def render_camera_detection():
-    st.title("🎥 رصد الحفر المباشر (SafeRoad AI)")
+    # Page Title
+    st.title("🎥 Live Pothole Detection (SafeRoad AI)")
     st.write("---")
     
-    # 2. فحص وجود الموديل وإظهار قائمة الملفات للمساعدة في حال الخطأ
+    # Check if model is loaded
     if model is None:
-        st.error("❌ لم يتم العثور على ملف الموديل 'best.pt'")
-        st.info("💡 تأكدي أن الملف موجود داخل مجلد MODELS وأن اسمه best.pt بحروف صغيرة.")
-        
-        with st.expander("🔍 تفاصيل الملفات على السيرفر (للمهندسة ريهام)"):
-            st.write("المجلد الرئيسي يحتوي على:")
-            st.code(os.listdir('.'))
-            # البحث عن مجلد الموديلات أياً كان اسمه
-            for folder in os.listdir('.'):
-                if folder.lower() == 'models':
-                    st.write(f"المحتويات داخل مجلد {folder}:")
-                    st.code(os.listdir(folder))
+        st.error("❌ Model file 'best.pt' not found!")
+        st.info("Make sure the file is uploaded to the 'MODELS' folder in GitHub.")
         return
 
-    st.success("✅ تم تحميل الموديل بنجاح!")
-    st.info("💡 وجهي الكاميرا نحو الطريق والتقطي صورة للفحص.")
+    st.success("✅ Model loaded successfully!")
+    st.info("💡 Point your camera at the road and take a photo for analysis.")
 
-    # 3. استخدام أداة الكاميرا المدمجة
-    img_file = st.camera_input("التقطي صورة للطريق")
+    # 2. Streamlit Camera Input
+    img_file = st.camera_input("Take a photo of the road")
 
     if img_file is not None:
-        # تحويل الصورة إلى تنسيق OpenCV
+        # Convert image to OpenCV format
         bytes_data = img_file.getvalue()
         cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-        with st.spinner('جاري تحليل الصورة...'):
-            # إجراء الرصد
+        with st.spinner('Analyzing image with YOLOv8...'):
+            # Run Inference
             results = model.predict(cv2_img, conf=0.4)
             
-            # رسم النتائج
+            # Plot Results
             annotated_img = results[0].plot()
             
-            # تحويل الألوان للعرض في ستريمليت
+            # Convert BGR to RGB for Streamlit display
             annotated_img_rgb = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)
             
-            st.success("تمت عملية الرصد!")
-            st.image(annotated_img_rgb, caption="نتائج رصد SafeRoad AI", use_container_width=True)
+            st.success("Analysis Complete!")
+            st.image(annotated_img_rgb, caption="SafeRoad AI Detection Results", use_container_width=True)
 
-            # عرض الإحصائيات
+            # Display Stats
             num_detections = len(results[0].boxes)
-            st.metric(label="عدد الحفر المرصودة", value=num_detections)
+            st.metric(label="Detected Potholes", value=num_detections)
 
             if num_detections > 0:
-                st.warning(f"⚠️ تنبيه: تم رصد {num_detections} منطقة تضرر.")
+                st.warning(f"⚠️ Warning: {num_detections} road defects detected. Drive safely!")
             else:
                 st.balloons()
-                st.success("✅ الطريق يبدو سليماً!")
+                st.success("✅ Road looks clear! No potholes detected.")
 
 if __name__ == "__main__":
     render_camera_detection()
