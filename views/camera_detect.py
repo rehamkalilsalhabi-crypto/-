@@ -8,7 +8,7 @@ import pandas as pd
 from fpdf import FPDF
 import time
 
-# 1. تحميل الموديل بذكاء
+# 1. تحميل الموديل بذكاء من المجلد MODELS
 @st.cache_resource
 def load_yolo_model():
     search_paths = ['MODELS/best.pt', 'models/best.pt', 'best.pt']
@@ -24,70 +24,69 @@ def create_pdf_report(detections_count, image_path):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="SafeRoad AI - Detection Report", ln=True, align='C')
+    pdf.cell(200, 10, txt="SafeRoad AI - Automated Detection Report", ln=True, align='C')
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt=f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align='L')
-    pdf.cell(200, 10, txt=f"Potholes Detected: {detections_count}", ln=True, align='L')
+    pdf.cell(200, 10, txt=f"Status: Alert - Potholes Detected", ln=True, align='L')
+    pdf.cell(200, 10, txt=f"Total Detections: {detections_count}", ln=True, align='L')
     pdf.image(image_path, x=10, y=50, w=180)
-    report_name = "SafeRoad_Official_Report.pdf"
+    report_name = "Automated_Road_Report.pdf"
     pdf.output(report_name)
     return report_name
 
 def render_camera_detection():
-    st.title("🤖 Autonomous Pothole Monitor")
+    st.title("🤖 Live Autonomous Detection")
     st.write("---")
 
     if model is None:
-        st.error("Model 'best.pt' not found. Please check your GitHub folders.")
+        st.error("Model 'best.pt' not found in MODELS folder.")
         return
 
-    st.info("System is in **Auto-Scan Mode**. Point the camera at the road.")
+    # شرح للمستخدم
+    st.info("System is monitoring... Point the camera at the road. It will auto-detect and generate reports.")
 
-    # استخدام دخل الكاميرا الأساسي
-    img_file = st.camera_input("Scanning Environment...", key="auto_scan")
+    # استخدام ميزة الكاميرا ولكن مع معالجة مستمرة
+    # ملاحظة: في الويب، يجب ضغط الزر مرة واحدة للبدء بسبب سياسات الخصوصية
+    img_file = st.camera_input("LIVE MONITORING ACTIVE")
 
     if img_file:
-        # تحويل الصورة ومعالجتها فوراً
         bytes_data = img_file.getvalue()
         cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-        # الرصد بحساسية عالية 0.2
+        # الرصد التلقائي بحساسية عالية 0.2 (عشان يلقط بسرعة)
         results = model.predict(cv2_img, conf=0.2, verbose=False)
         num_detections = len(results[0].boxes)
-        annotated_img = results[0].plot()
-
-        # إذا لقط حفرة:
+        
         if num_detections > 0:
-            st.warning(f"🚨 ALERT: {num_detections} Pothole(s) Auto-Detected!")
+            # هنا يظهر "الإطار الأحمر" والتحذير فوراً
+            annotated_img = results[0].plot()
             
-            # حفظ الصورة للتقرير
-            temp_path = "captured_pothole.jpg"
+            # تنبيه بصري وسمعي (إشعار الموقع)
+            st.warning(f"🚨 ALERT! {num_detections} POTHOLE(S) DETECTED!")
+            st.toast("⚠️ Pothole Detected!", icon="🚨")
+            
+            # عرض النتيجة فوراً
+            st.image(cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB), caption="Live Detection Result")
+            
+            # حفظ الصورة وتوليد التقرير تلقائياً خلف الكواليس
+            temp_path = "auto_capture.jpg"
             cv2.imwrite(temp_path, annotated_img)
-            
-            # عرض النتيجة
-            st.image(cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB), caption="Detection Success")
-            
-            # توليد التقرير تلقائياً
             report_file = create_pdf_report(num_detections, temp_path)
             
-            # زر التحميل يظهر فوراً
+            # حفظ في السجل CSV
+            new_log = pd.DataFrame({"Time": [datetime.now()], "Count": [num_detections]})
+            new_log.to_csv("detections_log.csv", mode='a', header=not os.path.exists("detections_log.csv"), index=False)
+
+            # زر التحميل يظهر مباشرة بعد الرصد الآلي
             with open(report_file, "rb") as f:
                 st.download_button(
-                    label="📥 Download This Report Now",
+                    label="📥 Download Detection Report",
                     data=f,
                     file_name=f"SafeRoad_Report_{datetime.now().strftime('%H%M%S')}.pdf",
                     mime="application/pdf"
                 )
-                
-            # حفظ في سجل البيانات CSV
-            if not os.path.exists("detections_log.csv"):
-                pd.DataFrame(columns=["Time", "Count"]).to_csv("detections_log.csv", index=False)
-            
-            new_log = pd.DataFrame({"Time": [datetime.now()], "Count": [num_detections]})
-            new_log.to_csv("detections_log.csv", mode='a', header=False, index=False)
-            st.toast("Result saved to system logs!", icon="✅")
         else:
-            st.success("✅ Road area clear. Continue scanning.")
+            st.success("✅ Road is Clear. Monitoring continues...")
 
 if __name__ == "__main__":
     render_camera_detection()
