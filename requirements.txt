@@ -1,5 +1,9 @@
 streamlit
 ultralytics
-opencv-python-headless
-fpdf
+opencv-contrib-python-headless
 pandas
+fpdf
+pillow
+geocoder
+plotly
+streamlit-webrtc
