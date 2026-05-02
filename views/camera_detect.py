@@ -2,20 +2,15 @@ import streamlit as st
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from PIL import Image
 import os
+from datetime import datetime
+import pandas as pd
+from fpdf import FPDF
 
-# 1. Smart model loader
+# 1. Load Model
 @st.cache_resource
 def load_yolo_model():
-    search_paths = [
-        'MODELS/best.pt',
-        'models/best.pt',
-        'best.pt',
-        os.path.join(os.getcwd(), 'MODELS', 'best.pt'),
-        os.path.join(os.getcwd(), 'models', 'best.pt')
-    ]
-    
+    search_paths = ['MODELS/best.pt', 'models/best.pt', 'best.pt']
     for path in search_paths:
         if os.path.exists(path):
             return YOLO(path)
@@ -23,50 +18,76 @@ def load_yolo_model():
 
 model = load_yolo_model()
 
-def render_camera_detection():
-    # Page Title
-    st.title("🎥 Live Pothole Detection (SafeRoad AI)")
-    st.write("---")
+# 2. Function to generate PDF Report
+def create_pdf_report(detections_count, image_path):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="SafeRoad AI - Detection Report", ln=True, align='C')
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt=f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align='L')
+    pdf.cell(200, 10, txt=f"Status: {'Potholes Detected' if detections_count > 0 else 'Clear Road'}", ln=True, align='L')
+    pdf.cell(200, 10, txt=f"Total Detections: {detections_count}", ln=True, align='L')
     
-    # Check if model is loaded
+    if detections_count > 0:
+        pdf.image(image_path, x=10, y=50, w=180)
+    
+    report_name = "Official_Road_Report.pdf"
+    pdf.output(report_name)
+    return report_name
+
+def render_camera_detection():
+    st.title("🎥 Automated Detection & Reporting")
+    st.write("---")
+
     if model is None:
-        st.error("❌ Model file 'best.pt' not found!")
-        st.info("Make sure the file is uploaded to the 'MODELS' folder in GitHub.")
+        st.error("Model not found. Please check your MODELS folder.")
         return
 
-    st.success("✅ Model loaded successfully!")
-    st.info("💡 Point your camera at the road and take a photo for analysis.")
-
-    # 2. Streamlit Camera Input
-    img_file = st.camera_input("Take a photo of the road")
+    # Camera Input
+    img_file = st.camera_input("Scan Road for Defects")
 
     if img_file is not None:
-        # Convert image to OpenCV format
+        # Convert image
         bytes_data = img_file.getvalue()
         cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-        with st.spinner('Analyzing image with YOLOv8...'):
-            # Run Inference
-            results = model.predict(cv2_img, conf=0.4)
-            
-            # Plot Results
-            annotated_img = results[0].plot()
-            
-            # Convert BGR to RGB for Streamlit display
-            annotated_img_rgb = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)
-            
-            st.success("Analysis Complete!")
-            st.image(annotated_img_rgb, caption="SafeRoad AI Detection Results", use_container_width=True)
+        # Inference
+        results = model.predict(cv2_img, conf=0.4)
+        annotated_img = results[0].plot()
+        num_detections = len(results[0].boxes)
 
-            # Display Stats
-            num_detections = len(results[0].boxes)
-            st.metric(label="Detected Potholes", value=num_detections)
+        # Save Result Image temporarily
+        temp_img_path = "temp_detected_pothole.jpg"
+        cv2.imwrite(temp_img_path, annotated_img)
 
-            if num_detections > 0:
-                st.warning(f"⚠️ Warning: {num_detections} road defects detected. Drive safely!")
-            else:
-                st.balloons()
-                st.success("✅ Road looks clear! No potholes detected.")
+        # Auto-Logging to CSV
+        log_data = {
+            "Timestamp": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+            "Detections": [num_detections],
+            "Status": ["Alert" if num_detections > 0 else "Safe"]
+        }
+        df = pd.DataFrame(log_data)
+        df.to_csv("detections_log.csv", mode='a', header=not os.path.exists("detections_log.csv"), index=False)
+
+        # Display Results
+        st.image(cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB), caption="Analysis Result")
+        st.metric("Potholes Found", num_detections)
+
+        # Generate & Download Report
+        if num_detections > 0:
+            st.warning("⚠️ Potholes detected! Generating official report...")
+            report_file = create_pdf_report(num_detections, temp_img_path)
+            
+            with open(report_file, "rb") as f:
+                st.download_button(
+                    label="📥 Download Official Report (PDF)",
+                    data=f,
+                    file_name=f"SafeRoad_Report_{datetime.now().strftime('%H%M%S')}.pdf",
+                    mime="application/pdf"
+                )
+        else:
+            st.success("✅ Road is safe. No report needed.")
 
 if __name__ == "__main__":
     render_camera_detection()
