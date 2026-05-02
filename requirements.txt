@@ -6,3 +6,4 @@ fpdf
 pillow
 geocoder
 plotly
+streamlit-webrtc
