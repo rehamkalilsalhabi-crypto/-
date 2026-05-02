@@ -1,0 +1,2 @@
+timestamp,tp,tn,fp,fn,accuracy,precision,recall,f1,total_images,model_path,data_yaml
+2026-05-02T15:24:50,390,0,0,2,0.9948979591836735,1.0,0.9948979591836735,0.9974424552429668,392,C:\Users\Salwa\Desktop\POTHOLE\MODELS\best.pt,C:\Users\Salwa\Desktop\POTHOLE\data.yaml
