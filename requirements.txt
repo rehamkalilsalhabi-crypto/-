@@ -1,11 +1,5 @@
-streamlit==1.56.0
-ultralytics==8.4.36
-opencv-python-headless
-pandas==3.0.2
-matplotlib==3.10.8
-plotly==6.7.0
-fpdf==1.7.2
-requests==2.33.1
-pillow==12.2.0
-torch
-torchvision
+streamlit
+ultralytics
+opencv-contrib-python-headless
+pandas
+fpdf
