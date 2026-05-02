@@ -3,7 +3,8 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import os
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+from datetime import datetime
+from fpdf import FPDF
 
 # تحميل الموديل
 @st.cache_resource
@@ -15,28 +16,58 @@ def load_model():
 
 model = load_model()
 
-st.title("🛡️ SafeRoad AI - LIVE Detection")
+# صوت تنبيه
+def trigger_alert():
+    st.components.v1.html("""
+        <audio autoplay>
+        <source src="https://www.soundjay.com/buttons/beep-01a.mp3">
+        </audio>
+    """, height=0)
 
-if model is None:
-    st.error("Model not found!")
-    st.stop()
+# الواجهة
+def main():
+    st.title("🛡️ SafeRoad AI")
+    st.warning("🚨 SYSTEM ACTIVE")
 
-st.warning("🚨 SYSTEM ACTIVE - LIVE SCANNING")
+    if model is None:
+        st.error("❌ Model not found (best.pt)")
+        return
 
-# كلاس لمعالجة الفيديو مباشرة
-class VideoProcessor(VideoTransformerBase):
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
+    img_file = st.camera_input("📷 افتح الكاميرا")
+
+    if img_file:
+        bytes_data = img_file.getvalue()
+        img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
         results = model.predict(img, conf=0.25, verbose=False)
 
         if len(results[0].boxes) > 0:
-            img = results[0].plot()
+            annotated = results[0].plot()
 
-        return img
+            trigger_alert()
 
-# تشغيل الكاميرا مباشرة
-webrtc_streamer(
-    key="live-detection",
-    video_processor_factory=VideoProcessor
-)
+            st.error("🚨 تم اكتشاف حفرة! سيتم إبلاغ الجهات المختصة")
+            st.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+            # حفظ الصورة
+            img_path = "pothole.jpg"
+            cv2.imwrite(img_path, annotated)
+
+            # إنشاء PDF
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(200, 10, "SafeRoad Detection Report", ln=True, align='C')
+            pdf.image(img_path, x=10, y=40, w=180)
+
+            pdf_path = "report.pdf"
+            pdf.output(pdf_path)
+
+            with open(pdf_path, "rb") as f:
+                st.download_button("📥 تحميل التقرير", f, "report.pdf")
+
+        else:
+            st.success("✅ الطريق سليم")
+
+if __name__ == "__main__":
+    main()
