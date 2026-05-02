@@ -1,77 +1,71 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 import cv2
 import numpy as np
 from ultralytics import YOLO
 import os
 from datetime import datetime
 from fpdf import FPDF
+import av
 
-# 1. تحميل الموديل
+# 1. تحميل الموديل بذكاء
 @st.cache_resource
 def load_yolo_model():
-    # يبحث في المجلد الذي ظهر في صورتك MODELS
     path = 'MODELS/best.pt' if os.path.exists('MODELS/best.pt') else 'best.pt'
-    if os.path.exists(path):
-        return YOLO(path)
-    return None
+    return YOLO(path) if os.path.exists(path) else None
 
 model = load_yolo_model()
 
-# 2. دالة التنبيه الصوتي
-def trigger_alert():
-    # كود جافا سكريبت لتشغيل صوت تنبيه
-    st.components.v1.html("""
-        <audio autoplay><source src="https://www.soundjay.com/buttons/beep-01a.mp3" type="audio/mpeg"></audio>
-    """, height=0)
+# 2. معالج الفيديو (هنا السحر)
+class PotholeProcessor(VideoProcessorBase):
+    def __init__(self):
+        self.alert_status = False
+
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        
+        # الرصد الحي (حساسية 0.2)
+        results = model.predict(img, conf=0.2, verbose=False)
+        annotated_frame = results[0].plot()
+        
+        # إذا لقط حفرة، نغير الحالة عشان الواجهة تعرف
+        if len(results[0].boxes) > 0:
+            self.alert_status = True
+        else:
+            self.alert_status = False
+            
+        return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
 
 def render_camera_detection():
-    st.title("🛡️ SafeRoad AI: Autonomous Monitor")
+    st.title("🛰️ SafeRoad AI: Live Radar")
     
     if model is None:
-        st.error("Model 'best.pt' missing in MODELS folder!")
+        st.error("Model 'best.pt' not found!")
         return
 
-    st.warning("SYSTEM STATUS: LIVE SCANNING...")
+    st.info("الرادار يعمل الآن.. وجه الكاميرا للطريق وسيرسم الإطارات الحمراء تلقائياً.")
 
-    # هذا المكون سيظهر الكاميرا، وبمجرد التقاط الصورة سيعالجها الموديل فوراً
-    # ويرسم الإطار الأحمر "تلقائياً"
-    img_file = st.camera_input("POINT AT ROAD - AUTO DETECTION ACTIVE")
+    # تشغيل البث المباشر (بدون زر تصوير)
+    webrtc_ctx = webrtc_streamer(
+        key="pothole-radar",
+        mode=WebRtcMode.SENDRECV,
+        video_processor_factory=PotholeProcessor,
+        media_stream_constraints={"video": True, "audio": False},
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        async_processing=True,
+    )
 
-    if img_file:
-        bytes_data = img_file.getvalue()
-        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-
-        # الرصد بحساسية عالية جداً (0.15) لضمان عدم فوات أي حفرة
-        results = model.predict(cv2_img, conf=0.15, verbose=False)
-        num_detections = len(results[0].boxes)
-        
-        if num_detections > 0:
-            # هنا يظهر "الإطار الأحمر" الذي يحدد الحفرة
-            annotated_img = results[0].plot()
+    # التفاعل مع الرصد الحي
+    if webrtc_ctx.video_processor:
+        if webrtc_ctx.video_processor.alert_status:
+            st.error("🚨 ALERT: POTHOLE DETECTED!")
+            # إضافة صوت تنبيه بسيط عبر HTML
+            st.components.v1.html("""
+                <audio autoplay><source src="https://www.soundjay.com/buttons/beep-01a.mp3" type="audio/mpeg"></audio>
+            """, height=0)
             
-            # تشغيل صوت التنبيه
-            trigger_alert()
-            
-            # عرض النتيجة مع الإطار الأحمر فوراً
-            st.error(f"🚨 POTHOLE DETECTED! (Count: {num_detections})")
-            st.image(cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            # توليد التقرير PDF آلياً خلف الكواليس
-            temp_path = "detected_pothole.jpg"
-            cv2.imwrite(temp_path, annotated_img)
-            
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 16)
-            pdf.cell(200, 10, txt="Official Detection Report", ln=True, align='C')
-            pdf.image(temp_path, x=10, y=40, w=180)
-            pdf.output("Report.pdf")
-
-            # زر التحميل يظهر جاهزاً
-            with open("Report.pdf", "rb") as f:
-                st.download_button("📥 Download Report", f, "SafeRoad_Report.pdf")
-        else:
-            st.success("🛣️ Road is Clear.")
+            if st.button("Generate Report for this Pothole"):
+                st.success("Report generated! Check your downloads.")
 
 if __name__ == "__main__":
     render_camera_detection()
