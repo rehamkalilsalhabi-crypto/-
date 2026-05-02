@@ -5,15 +5,16 @@ from ultralytics import YOLO
 from PIL import Image
 import os
 
-# 1. دالة ذكية لتحميل الموديل والبحث عنه في كافة المجلدات
+# 1. دالة ذكية تبحث عن الموديل في المجلدات (سواء كانت MODELS أو models)
 @st.cache_resource
 def load_yolo_model():
-    # قائمة بالمسارات المحتملة للموديل (بناءً على أخطاء المسارات الشائعة)
+    # قائمة بالمسارات بناءً على ما ظهر في صورتك (MODELS بحروف كبيرة)
     search_paths = [
+        'MODELS/best.pt',
         'models/best.pt',
         'best.pt',
-        os.path.join(os.getcwd(), 'models', 'best.pt'),
-        os.path.join(os.getcwd(), 'best.pt')
+        os.path.join(os.getcwd(), 'MODELS', 'best.pt'),
+        os.path.join(os.getcwd(), 'models', 'best.pt')
     ]
     
     for path in search_paths:
@@ -28,55 +29,54 @@ def render_camera_detection():
     st.title("🎥 رصد الحفر المباشر (SafeRoad AI)")
     st.write("---")
     
-    # 2. فحص وجود الموديل وإظهار تعليمات للمستخدم في حال عدم وجوده
+    # 2. فحص وجود الموديل وإظهار قائمة الملفات للمساعدة في حال الخطأ
     if model is None:
         st.error("❌ لم يتم العثور على ملف الموديل 'best.pt'")
-        st.write("### 🛠️ ماذا تفعلين الآن؟")
-        st.write("1. تأكدي من وجود مجلد باسم **models** في GitHub.")
-        st.write("2. تأكدي أن الملف بداخله واسمه **best.pt** (حروف صغيرة).")
+        st.info("💡 تأكدي أن الملف موجود داخل مجلد MODELS وأن اسمه best.pt بحروف صغيرة.")
         
-        # كود لمساعدتك في رؤية الملفات المرفوعة فعلياً
-        with st.expander("🔍 اضغطي هنا لرؤية الملفات المرفوعة حالياً على السيرفر"):
-            st.write("الملفات في المجلد الرئيسي:")
+        with st.expander("🔍 تفاصيل الملفات على السيرفر (للمهندسة ريهام)"):
+            st.write("المجلد الرئيسي يحتوي على:")
             st.code(os.listdir('.'))
-            if os.path.exists('models'):
-                st.write("الملفات داخل مجلد models:")
-                st.code(os.listdir('models'))
+            # البحث عن مجلد الموديلات أياً كان اسمه
+            for folder in os.listdir('.'):
+                if folder.lower() == 'models':
+                    st.write(f"المحتويات داخل مجلد {folder}:")
+                    st.code(os.listdir(folder))
         return
 
-    st.success("✅ الموديل جاهز للعمل!")
-    st.info("💡 وجهي الكاميرا نحو الطريق والتقطي صورة ليتم فحصها فوراً.")
+    st.success("✅ تم تحميل الموديل بنجاح!")
+    st.info("💡 وجهي الكاميرا نحو الطريق والتقطي صورة للفحص.")
 
-    # 3. استخدام أداة الكاميرا الأصلية من Streamlit
+    # 3. استخدام أداة الكاميرا المدمجة
     img_file = st.camera_input("التقطي صورة للطريق")
 
     if img_file is not None:
-        # تحويل الصورة الملتقطة إلى تنسيق OpenCV
+        # تحويل الصورة إلى تنسيق OpenCV
         bytes_data = img_file.getvalue()
         cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-        with st.spinner('جاري تحليل الصورة ورصد الحفر باستخدام YOLOv8...'):
+        with st.spinner('جاري تحليل الصورة...'):
             # إجراء الرصد
             results = model.predict(cv2_img, conf=0.4)
             
-            # رسم النتائج على الصورة
+            # رسم النتائج
             annotated_img = results[0].plot()
             
-            # تحويل الألوان من BGR إلى RGB للعرض في المتصفح
+            # تحويل الألوان للعرض في ستريمليت
             annotated_img_rgb = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)
             
-            st.success("تمت عملية الرصد بنجاح!")
+            st.success("تمت عملية الرصد!")
             st.image(annotated_img_rgb, caption="نتائج رصد SafeRoad AI", use_container_width=True)
 
-            # إظهار الإحصائيات (عدد الحفر)
+            # عرض الإحصائيات
             num_detections = len(results[0].boxes)
             st.metric(label="عدد الحفر المرصودة", value=num_detections)
 
             if num_detections > 0:
-                st.warning(f"⚠️ انتبه: تم رصد {num_detections} منطقة خلل في الطريق.")
+                st.warning(f"⚠️ تنبيه: تم رصد {num_detections} منطقة تضرر.")
             else:
                 st.balloons()
-                st.success("✅ الطريق يبدو آمناً، لم يتم رصد أي حفر!")
+                st.success("✅ الطريق يبدو سليماً!")
 
 if __name__ == "__main__":
     render_camera_detection()
